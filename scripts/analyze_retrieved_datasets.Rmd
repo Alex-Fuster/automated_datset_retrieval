@@ -328,7 +328,9 @@ plot_queries_scores
 combined_plot_queries <- ggarrange(plot_queries_relevance_counts,
                                    plot_queries_scores, 
                                    nrow = 1,
-                                   ncol = 2)
+                                   ncol = 2,
+                                   labels = LETTERS[1:2],
+                                   font.label = list(size = 20))
 
 combined_plot_queries
 
@@ -570,7 +572,7 @@ plot_data_type,
 plot_spatial_range_counts,
 nrow = 2,
 ncol = 2,
-  labels = c("a", "b", "c","d"),
+  labels = LETTERS[1:4],
 font.label = list(size = 24),
 heights = c(1,0.6))
 
@@ -938,14 +940,15 @@ plot_location_inf <- ggarrange(
   nrow = 1,
   ncol = 2,
   
-  labels = c("A", "B")
+  labels = c("A", "B"),
+  font.label = list(size = 20)
   
 )
 
 plot_location_inf
 
 
-#ggsave("plot_location_inf.png", height = 5, width = 13)
+#ggsave(here::here("figures/plot_location_inf.png"), height = 5, width = 13)
 
 ```
 
@@ -1056,7 +1059,9 @@ print(plot_comm)
 
 plots_taxa <- ggarrange(plot_spp,
           plot_comm,
-          common.legend = TRUE)
+          common.legend = TRUE,
+          labels = LETTERS[5:6],
+          font.label = list(size = 24))
 
 plots_taxa
 
