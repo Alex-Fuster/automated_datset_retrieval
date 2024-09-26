@@ -1,18 +1,7 @@
 
 
 
-## 1. Counts of each relevance category
-###################################################
 
-count_by_relevance <- function(df) {
-  
-  df_counts_relevance <- as.data.frame(table(df$dataset_relevance))
-  df_counts_relevance <- df_counts_relevance[order(-df_counts_relevance$Freq),]
-  colnames(df_counts_relevance) <- c("dataset relevance", "N")
-
-  return(df_counts_relevance)
-  
-}
 
 
 
@@ -21,7 +10,7 @@ count_by_relevance <- function(df) {
 count_relevance_by_source <- function(df) {
   
   
-  df_relevance_source <- as.data.frame.matrix(table(df$dataset_relevance,df$source))
+  df_relevance_source <- as.data.frame.matrix(table(df$MC_relevance_modifiers,df$source))
   
   df_relevance_source$relevance <- rownames(df_relevance_source)
   
@@ -469,12 +458,11 @@ plot_duration_relevance <- function(df, counts_Na) {
 # count publications where spatial range is not reported
 
 count_not.reported_spatial_range <- function(df) {
+
   
-  dataset1 <- df[df$dataset_relevance != "cant access",]
+  df$MC_relevance_modifiers <- as.factor(df$MC_relevance_modifiers)
   
-  dataset1$dataset_relevance <- as.factor(dataset1$dataset_relevance)
-  
-  spatial_range_km2_vec <- dataset1$spatial_range_position[dataset1$spatial_range_position != ""]
+  spatial_range_km2_vec <- df$spatial_range_position[df$spatial_range_position != ""]
   
   spatial_range_km2_vec <- spatial_range_km2_vec[!is.na(spatial_range_km2_vec)]
   
@@ -491,11 +479,9 @@ count_not.reported_spatial_range <- function(df) {
 
 plot_spat.range_counts <- function(df) {
   
-  dataset1 <- df[df$dataset_relevance != "cant access",]
+  df$dataset_relevance <- as.factor(df$MC_relevance_modifiers)
   
-  dataset1$dataset_relevance <- as.factor(dataset1$dataset_relevance)
-  
-  spatial_range_km2_vec <- dataset1$spatial_range_km2[dataset1$spatial_range_km2 != ""]
+  spatial_range_km2_vec <- df$spatial_range_km2[df$spatial_range_km2 != ""]
   
   spatial_range_km2_vec <- spatial_range_km2_vec[!is.na(spatial_range_km2_vec)]
   
@@ -554,17 +540,15 @@ plot_spat_temp_relevance <- function(df) {
   
   dataset1 <- df
   
-  dataset1$dataset_relevance <- as.factor(dataset1$dataset_relevance)
+  dataset1$MC_relevance_modifiers <- as.factor(dataset1$MC_relevance_modifiers)
   
   
   
-  dataset_filt <- dataset1[,c("spatial_range_km2","temporal_duration_y", "dataset_relevance")]
+  dataset_filt <- dataset1[,c("spatial_range_km2","temporal_duration_y", "MC_relevance_modifiers")]
   
   dataset_filt <- dataset_filt[
     dataset_filt$spatial_range_km2 != "" & 
-      dataset1$temporal_duration_y != "" & 
-      dataset_filt$dataset_relevance != "No dataset" & 
-      dataset_filt$dataset_relevance != "" ,]
+      dataset1$temporal_duration_y != "",]
   
   
   
@@ -581,14 +565,12 @@ plot_spat_temp_relevance <- function(df) {
   
   
   
-  dataset_filt$dataset_relevance
-  
   plot <- ggplot(na.omit(dataset_filt), 
                  aes(x = spatial_range_km2, y = temporal_duration_y))+
     xlab("spatial range (km2)")+
     ylab("duration (years)")+
     geom_boxplot(outlier.shape = NA)+
-    geom_jitter(aes(colour = dataset_relevance),shape=16, position=position_jitter(0.2), size =4.5, alpha = 0.5) +
+    geom_jitter(aes(colour = MC_relevance_modifiers),shape=16, position=position_jitter(0.2), size =4.5, alpha = 0.5) +
     scale_color_manual(name = "dataset relevance",values = c("red","dodgerblue","purple2"))+
     labs(col = "Relevance")+
     scale_x_discrete(labels = c("=< 5.000", "(5.000-15.0000]", "> 15.000"))+

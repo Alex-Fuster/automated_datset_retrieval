@@ -46,9 +46,9 @@ my.theme<-theme(axis.text=element_text(size=15),
 
 ```{r}
 
-dataset <- read_excel("../data/dataset.xlsx")
+dataset <- read_excel("../data/dataset_092624.xlsx")
 
-dataset <- dataset %>%
+dataset_repos <- dataset %>%
   filter(!(source %in% c("semantic_scholar", "referenced")))
 
 ```
@@ -60,7 +60,7 @@ dataset <- dataset %>%
 ```{r}
 
 query_sets <- lapply(0:10, function(i) {
-  query_ids <- which(grepl(paste0("\\b", i, "\\b"), dataset$id_query))
+  query_ids <- which(grepl(paste0("\\b", i, "\\b"), dataset_repos$id_query))
   return(query_ids)
 })
 
@@ -129,7 +129,7 @@ plot_overlap_queries = ggplot(upper_triangle_df, aes(x = col, y = row, fill = va
 
 plot_overlap_queries
 
-ggsave("../figures/plot_overlap_queries.png", height = 5, width = 6)
+#ggsave("../figures/plot_overlap_queries.png", height = 5, width = 6)
 
 ```
 
@@ -138,39 +138,67 @@ ggsave("../figures/plot_overlap_queries.png", height = 5, width = 6)
 Count Valid/non-valid datasets:
 
 ```{r}
-
-table(dataset$valid_yn)
-
+table(dataset_repos$valid_yn)
 ```
 
 Count reasons for non-valid assignment:
 
 ```{r}
-
-table(dataset$reason_non_valid[which(dataset$valid_yn=="no")])
+table(dataset_repos$reason_non_valid[which(dataset_repos$valid_yn=="no")])
 ```
 
-Select only relevant datasets
+Discard non-valid, non-accessible, or non-existent datasets
+Format columns
 
 ```{r}
-dataset <- dataset[dataset$dataset_relevance != "",]
-dataset <- dataset %>% dplyr::filter(valid_yn == "yes")
-dataset$dataset_relevance <- as.factor(dataset$dataset_relevance)
 
-dataset$id_query  <- stringr::str_trim(dataset$id_query)
-dataset$dataset_relevance  <- str_trim(dataset$dataset_relevance)
+dataset_repos_assessed <- dataset_repos |>
+  dplyr::filter(valid_yn == "yes") |>
+  dplyr::filter(MC_relevance != "") |>
+  dplyr::mutate(
+    MC_relevance = as.factor(MC_relevance),
+    MC_relevance_modifiers = as.factor(MC_relevance_modifiers),
+    id_query = stringr::str_trim(id_query),
+    MC_relevance = stringr::str_trim(MC_relevance),
+    MC_relevance_modifiers = stringr::str_trim(MC_relevance_modifiers)
+  )
 
-head(dataset)
+
+head(dataset_repos_assessed)
 ```
 
 # 1. Number of datasets and relevance categories
 
 ```{r}
 
-df_N_relevance <- count_by_relevance(dataset)
+# total retrieved datasets from repositories
+n_retrieved_repos <- nrow(dataset_repos)
 
-df_N_relevance %>% 
-  mutate(percent = N/sum(N)*100)
+# Count and calculate percentages for MC_relevance, labeled as MC_mainc_relevance
+relevance_mainc_table <- dataset_repos_assessed |>
+  dplyr::count(MC_relevance) |>
+  dplyr::mutate(
+    MC_mainc_relevance = factor(MC_relevance, levels = c("H", "M", "L", "X")),
+    percentage_mainc_relevance = (n / n_retrieved_repos) * 100
+  ) |>
+  dplyr::select(MC_mainc_relevance, n_mainc_relevance = n, percentage_mainc_relevance) |>
+  dplyr::arrange(MC_mainc_relevance)
+
+# Count and calculate percentages for MC_relevance_modifiers
+relevance_modifiers_table <- dataset_repos_assessed |>
+  dplyr::count(MC_relevance_modifiers) |>
+  dplyr::mutate(
+    MC_relevance_modifiers = factor(MC_relevance_modifiers, levels = c("H", "M", "L", "X")),
+    percentage_relevance_modifiers = (n / n_retrieved_repos) * 100
+  ) |>
+  dplyr::select(MC_relevance_modifiers, n_relevance_modifiers = n, percentage_relevance_modifiers) |>
+  dplyr::arrange(MC_relevance_modifiers)
+
+# Merge the two tables by matching the row order
+merged_table <- dplyr::bind_cols(relevance_mainc_table, relevance_modifiers_table)
+
+# Display the resulting merged table
+print(merged_table)
 ```
 
 
@@ -198,14 +226,14 @@ convert_query = data.frame("id_query" = as.character(seq(0,10)), "query" = c(
 
 #split rows in function of character comas
 
-dataset_q <- dataset %>%               
+dataset_query <- dataset_repos %>%               
   separate_rows(id_query, sep=",") 
 
 
-dataset_q <- merge(dataset_q, convert_query, by.all="id_query")
+dataset_query <- merge(dataset_query, convert_query, by.all="id_query")
 
 
-dataset_q$query  <- factor(dataset_q$query,
+dataset_query$query  <- factor(dataset_query$query,
                            levels= c("species", "occurrence + species",
                                      "inventory + species", "collection + species",
                                      "sampling + species", "survey + species" , 
@@ -214,13 +242,11 @@ dataset_q$query  <- factor(dataset_q$query,
                                      "time series + species" ))
 
 
-df_queries_counts_ind <- dataset_q %>% 
-  group_by(dataset_relevance, query) %>% 
-  summarise(n = n()) 
-
-df_queries_counts_ind <- df_queries_counts_ind %>% 
-  dplyr::filter(dataset_relevance %in% c("X", "L", "M", "H")) %>% 
-  mutate(dataset_relevance = factor(dataset_relevance))
+df_queries_counts_ind <- dataset_query %>% 
+  group_by(MC_relevance_modifiers, query) %>% 
+  summarise(n = n())  %>% 
+  dplyr::filter(MC_relevance_modifiers %in% c("X", "L", "M", "H")) %>% 
+  mutate(MC_relevance_modifiers = factor(MC_relevance_modifiers))
 
 
 df_queries_counts_ind
@@ -237,8 +263,8 @@ Plot the results:
 
 
 plot_queries_relevance_counts <- ggplot(df_queries_counts_ind, 
-                                          aes(x=query, y=n, group = dataset_relevance, 
-                                              color = dataset_relevance,shape=dataset_relevance )) +
+                                          aes(x=query, y=n, group = MC_relevance_modifiers, 
+                                              color = MC_relevance_modifiers,shape=MC_relevance_modifiers )) +
   geom_segment( aes(x=query ,xend=query, y=0, yend=max(n)), color="grey") +
     geom_point(size=4, alpha = 0.8) +
     coord_flip() +
@@ -267,7 +293,7 @@ plot_queries_relevance_counts
 
 ```{r}
 
-df_zscores_queries <- calculate_z.score_queries(df = dataset)
+df_zscores_queries <- calculate_z.score_queries(df = dataset_repos)
 
 df_zscores_queries$Fscore <- round(df_zscores_queries$Fscore, 2)
 df_zscores_queries$Precision <- round(df_zscores_queries$Precision, 2)
@@ -275,8 +301,6 @@ df_zscores_queries$Recall <- round(df_zscores_queries$Recall, 2)
 
 
 df_zscores_queries
-
-write.table(df_zscores_queries, file = "df_zscores_queries.csv", sep = ",", quote = FALSE, row.names = F)
 
 ```
 
@@ -308,24 +332,32 @@ combined_plot_queries <- ggarrange(plot_queries_relevance_counts,
 
 combined_plot_queries
 
-ggsave("../figures/combined_plot_queries.png",height = 6,width = 13)
+#ggsave("../figures/combined_plot_queries.png",height = 6,width = 13)
 
 ```
 
+
+# ANALYSES OF RELEVANT DATASETS
+
+Discard datasets with negligible relevance for all the analyses from here in advance.
+
+```{r}
+dataset_repos_relevant <- dataset_repos_assessed[dataset_repos_assessed$MC_relevance_modifiers != "X",]
+
+# total number of relevant datasets
+
+n_repos_relevant <- nrow(dataset_repos_relevant)
+```
 
 
 # 3. Temporal range and duration
 
 
-Discard datasets with negligible relevance (n = 16) for all the analyses from here in advance.
-
 ```{r}
-dataset <- dataset[dataset$dataset_relevance != "X",]
-
 
 # how many datasets with temporal range information
 
-print(paste(length(which(dataset$temporal_range_position == "not given")), "publications without temporal range data"))
+print(paste(length(which(dataset_repos_relevant$temporal_range_position == "not given")), "publications without temporal range data.", length(which(dataset_repos_relevant$temporal_range_position == "not given"))/n_repos_relevant*100, "%"))
 ```
 
 ### 3.1 Temporal range
@@ -334,7 +366,7 @@ print(paste(length(which(dataset$temporal_range_position == "not given")), "publ
 
 # Select variables of interest
 
-dataset_temp_range <- dataset[,c("url", "temp_range_i", "temp_range_f", "time_series")]
+dataset_temp_range <- dataset_repos_relevant[,c("url", "temp_range_i", "temp_range_f", "time_series")]
 
 # Eliminate Nas
 
@@ -397,7 +429,8 @@ How many publications without temporal duration data?
 
 ```{r}
 
-print(paste(length(which(dataset$temporal_duration_position == "not given")), "publications without temporal duration data"))
+print(paste(length(which(dataset_repos_relevant$temporal_duration_position == "not given")), "publications without temporal duration data.",
+            length(which(dataset_repos_relevant$temporal_duration_position == "not given"))/n_repos_relevant*100, "%"))
 
 ```
 
@@ -425,7 +458,7 @@ Average duration (for those with data):
 
 ```{r}
 
-dataset_temp_duration <- subset(dataset, 
+dataset_temp_duration <- subset(dataset_repos_relevant, 
                                   temporal_duration_y > 0 | temporal_duration_y == "not given",
                                   select = c(temporal_duration_y,id_query))
   
@@ -447,9 +480,10 @@ How many publications without spatial range data?
 
 ```{r}
 
-n_not_reported <- count_not.reported_spatial_range(dataset)
+n_not_reported <- count_not.reported_spatial_range(dataset_repos_relevant)
 
-print(paste(n_not_reported, "publications without spatial range data"))
+print(paste(n_not_reported, "publications without spatial range data.",
+            n_not_reported/n_repos_relevant*100, "%"))
 
 ```
 
@@ -457,27 +491,23 @@ Average spatial range:
 
 ```{r}
 
-dataset1 <- dataset[dataset$dataset_relevance != "cant access",]
-  
-  dataset1$dataset_relevance <- as.factor(dataset1$dataset_relevance)
-  
-  spatial_range_km2_vec <- dataset1$spatial_range_km2[dataset1$spatial_range_km2 != ""]
-  
-  spatial_range_km2_vec <- spatial_range_km2_vec[!is.na(spatial_range_km2_vec)]
-  
-  spatial_range_km2_vec <- as.numeric(spatial_range_km2_vec) 
+# Convert spatial_range_km2 to numeric and compute the mean
+dataset_repos_relevant <- dataset_repos_relevant |>
+  dplyr::mutate(spatial_range_km2_numeric = as.numeric(spatial_range_km2)) 
 
+# Compute the mean of the numeric column, excluding NA values
+mean_spatial_range_km2 <- dataset_repos_relevant |>
+  dplyr::summarise(mean_value = mean(spatial_range_km2_numeric, na.rm = TRUE))
 
-print(paste("mean of",
-            round(mean(na.omit(spatial_range_km2_vec)), digits = 0),
-            "km2"))
+# Display the mean
+print(mean_spatial_range_km2)
 ```
 
 Plot the results: Spatial ranges are divided according to the thresholds established to determine a low, moredate and high spatial range: \<5000, 500-15000, \>15000
 
 ```{r}
 
-plot_spatial_range_counts <- plot_spat.range_counts(dataset)+
+plot_spatial_range_counts <- plot_spat.range_counts(dataset_repos_assessed)+
   coord_flip()
 
 plot_spatial_range_counts
@@ -489,7 +519,8 @@ plot_spatial_range_counts
 
 
 ```{r}
-print(paste(length(which(dataset$geospatial_info_repo_page_text == "not given")), "publications without spatial range data in the repository"))
+print(paste(length(which(dataset_repos_assessed$geospatial_info_repo_page_text == "not given")), "publications without spatial range data in the repository.",
+            length(which(dataset_repos_assessed$geospatial_info_repo_page_text == "not given"))/n_repos_relevant*100, "%"))
 
 ```
 
@@ -501,7 +532,7 @@ print(paste(length(which(dataset$geospatial_info_repo_page_text == "not given"))
 
 ```{r}
 
-plot_spatial_temporal_relevance <- plot_spat_temp_relevance(df = dataset)
+plot_spatial_temporal_relevance <- plot_spat_temp_relevance(df = dataset_repos_relevant)
 
 plot_spatial_temporal_relevance
 
@@ -511,7 +542,7 @@ plot_spatial_temporal_relevance
 
 ```{r}
 
-df_data_type_counts <- compute_df_data.type(df = dataset)
+df_data_type_counts <- compute_df_data.type(df = dataset_repos_relevant)
 
 df_data_type_counts 
 
@@ -545,7 +576,7 @@ heights = c(1,0.6))
 
 plot_combined_corpus
 
-ggsave("../figures/plot_combined_corpus.png", height = 10, width = 12)
+#ggsave("../figures/plot_combined_corpus.png", height = 10, width = 12)
 ```
 
 
@@ -575,17 +606,6 @@ df_dataset_types
 ```
 
 ```{r}
-dataset <- read_excel("../data/dataset.xlsx")
-dataset <- dataset %>%
-  filter(!(source %in% c("semantic_scholar", "referenced")))
-dataset <- dataset[dataset$dataset_relevance != "",]
-dataset <- dataset %>% dplyr::filter(valid_yn == "yes")
-
-## Only relevant datasets:
-
-dataset_rel <- dataset[dataset$dataset_relevance != "X",]
-
-
 
 url <- c()
 dataset_type <- c()
@@ -596,19 +616,19 @@ in_title <- c()
 in_abstract <- c()
 
 
-for (i in 1:nrow(dataset_rel)) {
+for (i in 1:nrow(dataset_repos_relevant)) {
   
   
   
-  dataset_type[i] <- dataset_rel[i, "data_type"]
-  url[i] <- dataset_rel[i, "url"]
+  dataset_type[i] <- dataset_repos_relevant[i, "data_type"]
+  url[i] <- dataset_repos_relevant[i, "url"]
   
   
   
   
   # search on the abstract and note the list of keywords that match the dataset types
 
-  keyword_abs[[i]] <- unique(get_keywords(input_string = dataset$full_text[i], 
+  keyword_abs[[i]] <- unique(get_keywords(input_string = dataset_repos_relevant$full_text[i], 
                dataset_types =  df_dataset_types))
   
   # if the list of keywords has 1 or more entry, then note that we found information in the abstract
@@ -628,7 +648,7 @@ for (i in 1:nrow(dataset_rel)) {
 
   # search on the title and note the list of keywords that match the dataset types
 
-  keyword_title[[i]] <- unique(get_keywords(input_string = dataset_rel$title[i], 
+  keyword_title[[i]] <- unique(get_keywords(input_string = dataset_repos_relevant$title[i], 
                dataset_types =  df_dataset_types))
   
   # if the list of keywords has 1 or more entry, then note that we found information in the abstract
@@ -648,8 +668,8 @@ for (i in 1:nrow(dataset_rel)) {
 }
 
 
-dataset_rel$data.type_in_abstract <- in_abstract
-dataset_rel$data_type_in_title <- in_title
+dataset_repos_relevant$data.type_in_abstract <- in_abstract
+dataset_repos_relevant$data_type_in_title <- in_title
 
 
 
@@ -676,7 +696,7 @@ print(paste("so",
 ```{r}
 
 
-df_features.l <- dataset_rel[,c("temporal_range_position", "temporal_duration_position", "spatial_range_position", "data.type_in_abstract", "data_type_in_title")]
+df_features.l <- dataset_repos_relevant[,c("temporal_range_position", "temporal_duration_position", "spatial_range_position", "data.type_in_abstract", "data_type_in_title")]
 
 # add id
 
@@ -733,7 +753,7 @@ n_all <- nrow(na.omit(df_features.l1[
                    df_features.l1$temporal_range_position == 'repository text' &
                    df_features.l1$spatial_range_position == 'repository text',]))
 
-print(paste(n_all, "with all the features readily accessible (in the repository text) - a", round(n_all/nrow(dataset_rel)*100, 3),"%"))
+print(paste(n_all, "with all the features readily accessible (in the repository text) - a", round(n_all/n_repos_relevant*100, 3),"%"))
 
 ```
 
@@ -752,7 +772,7 @@ df_features.l2 <- df_features.l1[
 df_features.l2 <- df_features.l2[!is.na(df_features.l2$data.type_in_abstract),]
 n_any <- length(unique(df_features.l2$id))
 
-print(paste(n_any, "with at least one feature readily accessible (in the repository text) - a", round(n_any/nrow(dataset_rel)*100, 3),"%"))
+print(paste(n_any, "with at least one feature readily accessible (in the repository text) - a", round(n_any/n_repos_relevant*100, 3),"%"))
 
 ```
 
@@ -760,7 +780,7 @@ print(paste(n_any, "with at least one feature readily accessible (in the reposit
 ```{r}
 
 
-df_locations_plot <- count_position_features(dataset)
+df_locations_plot <- count_position_features(dataset_repos_relevant)
 
 df_locations_plot <- df_locations_plot[!is.na(df_locations_plot$location), ]
 
@@ -787,11 +807,11 @@ plot_location_features
 
 # Eliminate Nas
 
-geospatial_info_article_text <- dataset$geospatial_info_article_text[-which(is.na(dataset$geospatial_info_article_text))]
+geospatial_info_article_text <- dataset_repos_relevant$geospatial_info_article_text[-which(is.na(dataset_repos_relevant$geospatial_info_article_text))]
 
-geospatial_info_dataset <- dataset$geospatial_info_dataset[-which(is.na(dataset$geospatial_info_dataset))]
+geospatial_info_dataset <- dataset_repos_relevant$geospatial_info_dataset[-which(is.na(dataset_repos_relevant$geospatial_info_dataset))]
 
-geospatial_info_repo_page_text <- dataset$geospatial_info_repo_page_text[-which(is.na(dataset$geospatial_info_repo_page_text))]
+geospatial_info_repo_page_text <- dataset_repos_relevant$geospatial_info_repo_page_text[-which(is.na(dataset_repos_relevant$geospatial_info_repo_page_text))]
 
 
 # Separate by commas
@@ -897,7 +917,7 @@ plot_location_type_geoinfo <- ggplot(df_filtered, aes(x=information, y = Freq, g
   scale_shape_manual(values = c(15,8,21))+
   scale_color_manual(values = c("black", "black", "black"))+
   ylab("publication counts")+
-  xlab("geospatial information")+
+  xlab("precision")+
   theme(legend.position = "top")
 
 
@@ -925,31 +945,47 @@ plot_location_inf <- ggarrange(
 plot_location_inf
 
 
-ggsave("plot_location_inf.png", height = 5, width = 13)
+#ggsave("plot_location_inf.png", height = 5, width = 13)
 
 ```
 
 
 
 
-# 9. Taxa (repositoreies)
+# 9. Taxa (repositories)
 
 ```{r}
 
-df_taxa <- read.csv("../data/df_taxa_fig.csv", header = TRUE,sep=",")
+df_taxa <- read_excel(here::here("data/df_taxa_fig.xlsx"))
 
-df_taxa$X1_10_spp[which(df_taxa$X1_10_spp == "Mammalia\xa0")] <- "Mammalia"
-df_taxa$X1_10_spp[which(df_taxa$X1_10_spp == "Amphibia\xa0")] <- "Amphibia"
-df_taxa$X1_10_spp[which(df_taxa$X1_10_spp == "Osteichthyes")] <- "Fish"
+df_taxa <- df_taxa |>
+  dplyr::left_join(
+    dataset_repos_relevant |> 
+      dplyr::select(url, MC_relevance_modifiers),  # Select only relevant columns from dataset_repos_relevant
+    by = "url"
+  ) |>
+  dplyr::filter(!is.na(MC_relevance_modifiers)) |> # remove non-relevant datasets
+  dplyr::mutate( #Remove spaces from fewspp_group and multispp_group columns
+    fewspp_group = stringr::str_trim(fewspp_group),
+    multispp_group = stringr::str_trim(multispp_group)
+  )
 
-df_taxa_spp <- df_taxa[which(df_taxa$X1_10_spp != ""),]
+# eliminate those without relevance in MC_relevance_modifier
+# correct spaces in the fewspp_group and multispp_group
 
-df_taxa_spp$X1_10_spp <- as.factor(df_taxa_spp$X1_10_spp)
+df_taxa$fewspp_group[which(df_taxa$fewspp_group == "Mammalia\xa0")] <- "Mammalia"
+df_taxa$fewspp_group[which(df_taxa$fewspp_group == "Amphibia\xa0")] <- "Amphibia"
+df_taxa$fewspp_group[which(df_taxa$fewspp_group == "Osteichthyes")] <- "Fish"
 
-df_taxa_spp$dataset_relevance <- factor(df_taxa_spp$dataset_relevance, levels = c("H", "M", "L"))
+df_taxa_spp <- df_taxa[which(df_taxa$fewspp_group != ""),]
 
-plot_spp <- ggplot(df_taxa_spp, aes(x = X1_10_spp, group = dataset_relevance, fill = dataset_relevance)) +
-  geom_bar(aes(x = forcats::fct_infreq(X1_10_spp), fill = dataset_relevance))+
+df_taxa_spp$fewspp_group <- as.factor(df_taxa_spp$fewspp_group)
+
+
+df_taxa_spp$MC_relevance_modifiers <- factor(df_taxa_spp$MC_relevance_modifiers, levels = c("H", "M", "L"))
+
+plot_spp <- ggplot(df_taxa_spp, aes(x = fewspp_group, group = MC_relevance_modifiers, fill = dataset_relevance)) +
+  geom_bar(aes(x = forcats::fct_infreq(fewspp_group), fill = MC_relevance_modifiers))+
   my.theme+
   coord_flip()+
     xlab("")+
@@ -961,14 +997,12 @@ plot_spp <- ggplot(df_taxa_spp, aes(x = X1_10_spp, group = dataset_relevance, fi
     my.theme
 
 
-df_taxa$more_10spp[which(df_taxa$more_10spp == "Mammalia\xa0")] <- "Mammalia"
-df_taxa$more_10spp[which(df_taxa$more_10spp == "Osteichthyes")] <- "Fish"
-df_taxa_comm <- df_taxa[which(df_taxa$more_10spp != ""),]
+df_taxa$multispp_group[which(df_taxa$multispp_group == "Mammalia\xa0")] <- "Mammalia"
+df_taxa$multispp_group[which(df_taxa$multispp_group == "Osteichthyes")] <- "Fish"
+df_taxa_comm <- df_taxa[which(df_taxa$multispp_group != ""),]
 
 
-
-
-df_taxa_comm$more_10spp <- as.factor(df_taxa_comm$more_10spp)
+df_taxa_comm$multispp_group <- as.factor(df_taxa_comm$multispp_group)
 df_taxa_comm$n <- as.numeric(df_taxa_comm$n)
 
 df_taxa_comm$n[which(df_taxa_comm$n == 1)] <- 2
@@ -977,9 +1011,9 @@ df_taxa_comm$n[which(df_taxa_comm$n == 2)] <- 3
 df_taxa_comm <- df_taxa_comm[order(-df_taxa_comm$n), ]
 
 
-df_taxa_comm$dataset_relevance <- factor(df_taxa_comm$dataset_relevance, levels = c("H", "M", "L"))
+df_taxa_comm$MC_relevance_modifiers <- factor(df_taxa_comm$MC_relevance_modifiers, levels = c("H", "M", "L"))
 
-plot_comm <- ggplot(df_taxa_comm, aes(x = more_10spp, y = n, fill = dataset_relevance)) +
+plot_comm <- ggplot(df_taxa_comm, aes(x = multispp_group, y = n, fill = MC_relevance_modifiers)) +
    geom_bar(stat = "identity", position = position_dodge2(preserve = "total"),  color = "white")+
   coord_flip()+
   ggtitle("Community-level studies")+
@@ -992,22 +1026,43 @@ plot_comm <- ggplot(df_taxa_comm, aes(x = more_10spp, y = n, fill = dataset_rele
     my.theme
 
 
+# Cap the 'n' values at 180 for plotting
+df_taxa_comm_capped <- df_taxa_comm |>
+  mutate(n_capped = ifelse(n > 180, 180, n))  # Cap n at 180 for plotting
+
+# Create the plot with capped values and label for the bar that exceeds 180
+plot_comm <- ggplot(df_taxa_comm_capped, aes(x = multispp_group, y = n_capped, fill = MC_relevance_modifiers)) +
+  geom_bar(stat = "identity", position = position_dodge2(preserve = "total"), color = "white") +
+  coord_flip() +
+  ggtitle("Community-level studies") +
+  xlab("") +
+  ylab("N taxa") +
+  scale_fill_manual(name = "dataset relevance",
+                    values = alpha(c("red", "purple2", "dodgerblue"), .7)) +
+  scale_y_continuous(limits = c(0, 180), breaks = c(25, 50, 75, 100, 125, 150, 175)) +
+  my.theme
+
+#Add a label to the bar that exceeds 180 (n = 439)
+plot_comm <- plot_comm +
+  geom_text(data = df_taxa_comm_capped %>% filter(n > 180), 
+            aes(label = "(439)", y = 165),  # Place label at the y-axis limit (180)
+            nudge_y = -10,
+            hjust = -0.01, size = 4, color = "black")  # Adjust label position and size
+
+# Step 4: Display the plot
+print(plot_comm)
+
+
+
 plots_taxa <- ggarrange(plot_spp,
           plot_comm,
           common.legend = TRUE)
 
-ggsave("plots_taxa.png", height = 8, width = 11)
+plots_taxa
+
+#ggsave(here::here("figures/plots_taxa.png"), height = 8, width = 11)
 
 ```
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1015,15 +1070,12 @@ ggsave("plots_taxa.png", height = 8, width = 11)
 ######################################################### 
 
 
+# 10. SEMANTIC SCHOLAR
 
-
-# 10. Semantic Scholar
 
 #### Read data
 
 ```{r}
-
-dataset <- read_excel("../data/dataset.xlsx")
 
 dataset_sc <- dataset[dataset$source == "semantic_scholar" & dataset$source != " ",]
 
@@ -1042,8 +1094,6 @@ table(dataset_sc$reason_non_valid[which(dataset_sc$valid_yn=="no")])
 
 
 
-
-
 ### 10.1. Number of datasets and relevance categories
 
 select only valid publications
@@ -1053,14 +1103,41 @@ dataset_sc <- dataset_sc %>% dplyr::filter(valid_yn == "yes")
 ```
 
 
-Only Semantic Scholar
+Count relevance
 
 ```{r}
 
-df_N_relevance <- count_by_relevance(dataset_sc)
+# total retrieved datasets from repositories
+dataset_sc_assessed <- dataset_sc |>
+  dplyr::filter(MC_relevance_modifiers %in% c("H", "M", "L", "X"))
 
-df_N_relevance %>% 
-  mutate(percent = N/sum(N)*100)
+n_retrieved_sc <- nrow(dataset_sc_assessed)
+
+# Count and calculate percentages for MC_relevance, labeled as MC_mainc_relevance
+relevance_mainc_table <- dataset_sc_assessed |>
+  dplyr::count(MC_relevance) |>
+  dplyr::mutate(
+    MC_mainc_relevance = factor(MC_relevance, levels = c("H", "M", "L", "X")),
+    percentage_mainc_relevance = (n / n_retrieved_sc) * 100
+  ) |>
+  dplyr::select(MC_mainc_relevance, n_mainc_relevance = n, percentage_mainc_relevance) |>
+  dplyr::arrange(MC_mainc_relevance)
+
+# Count and calculate percentages for MC_relevance_modifiers
+relevance_modifiers_table <- dataset_repos_assessed |>
+  dplyr::count(MC_relevance_modifiers) |>
+  dplyr::mutate(
+    MC_relevance_modifiers = factor(MC_relevance_modifiers, levels = c("H", "M", "L", "X")),
+    percentage_relevance_modifiers = (n / n_retrieved_sc) * 100
+  ) |>
+  dplyr::select(MC_relevance_modifiers, n_relevance_modifiers = n, percentage_relevance_modifiers) |>
+  dplyr::arrange(MC_relevance_modifiers)
+
+# Merge the two tables by matching the row order
+merged_table <- dplyr::bind_cols(relevance_mainc_table, relevance_modifiers_table)
+
+# Display the resulting merged table
+print(merged_table)
 ```
 
 ### 10.2 Relevance counts by source
@@ -1068,12 +1145,12 @@ df_N_relevance %>%
 
 ```{r}
 
-dataset <- read_excel("../data/dataset.xlsx")
+dataset <- read_excel("../data/dataset_092624.xlsx")
+dataset <- dataset[which(dataset$MC_relevance_modifiers != ""),]
+dataset <- dataset %>% dplyr::filter(valid_yn == "yes") |> 
+  dplyr::filter(source != "referenced")
 
-dataset <- dataset[which(dataset$dataset_relevance != ""),]
-dataset <- dataset %>% dplyr::filter(valid_yn == "yes")
-
-dataset$dataset_relevance[which(dataset$dataset_relevance == "cant access")] <- "No access"
+dataset$MC_relevance_modifiers[which(dataset$MC_relevance_modifiers == "cant access")] <- "No access"
 
 df_rel_source <- count_relevance_by_source(df = dataset)
 
@@ -1090,7 +1167,7 @@ Plot the results:
 
 df_rel_source_melt <- melt(df_rel_source, id ="relevance")
 colnames(df_rel_source_melt) <- c("relevance", "source", "value")
-df_rel_source_melt$relevance[which(df_rel_source_melt$relevance== "cant access")]
+
 
 plot_relevance_source <- ggplot(df_rel_source_melt, 
                                           aes(x=relevance, y=value, group = source, 
@@ -1118,7 +1195,7 @@ plot_relevance_source <- ggplot(df_rel_source_melt,
 
 plot_relevance_source
 
-#ggsave("plots_semantic_scholar/plot_relevance_source.png", height = 5, width = 8)
+#ggsave(here::here("figures/plot_relevance_source.png"), height = 5, width = 8)
 
 ```
 
@@ -1140,19 +1217,12 @@ plot_data.type_format(dataset1)
 
 ```{r}
 
-dataset <- read_excel("../data/dataset.xlsx")
-
-dataset <- dataset %>% dplyr::filter(valid_yn == "yes")
-dataset$dataset_relevance[which(dataset$dataset_relevance == "cant access")] <- "No access"
-
-
-dataset_st <- dataset[dataset$dataset_relevance != "No dataset",]
-dataset_st <- dataset_st[dataset_st$dataset_relevance != "No access",]
-dataset_st <- dataset_st[dataset_st$dataset_relevance != "X",]
-dataset_st <- dataset_st[dataset_st$dataset_relevance != "",]
-dataset_st <- dataset_st[!is.na(dataset_st$dataset_relevance),]
-
-dataset_st$publication_year
+dataset_st <- dataset |>
+  dplyr::filter(dataset_relevance != "No dataset") |>
+  dplyr::filter(dataset_relevance != "No access") |>
+  dplyr::filter(dataset_relevance != "X") |>
+  dplyr::filter(dataset_relevance != "") |>
+  dplyr::filter(!is.na(dataset_relevance))
 
 
 ```
@@ -1195,7 +1265,7 @@ plots_semantic_repos <- ggarrange(
 
 plots_semantic_repos
 
-ggsave("semantic_repos_comparison.png", height = 9, width = 9)
+#ggsave(here::here("figures/semantic_repos_comparison.png"), height = 9, width = 9)
 
 ```
 
