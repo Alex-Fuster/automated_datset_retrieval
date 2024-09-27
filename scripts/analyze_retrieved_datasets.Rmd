@@ -133,6 +133,11 @@ plot_overlap_queries
 
 ```
 
+Mean overlap 
+
+```{r}
+mean(overlap_matrix)
+```
 
 
 Count Valid/non-valid datasets:
@@ -440,7 +445,7 @@ Publication counts by temporal duration (years):
 
 ```{r}
   
-df_duration_counts <- count_durations(df = dataset, order_by = "counts")
+df_duration_counts <- count_durations(df = dataset_repos_relevant, order_by = "counts")
 
 df_duration_counts
 ```
@@ -509,7 +514,7 @@ Plot the results: Spatial ranges are divided according to the thresholds establi
 
 ```{r}
 
-plot_spatial_range_counts <- plot_spat.range_counts(dataset_repos_assessed)+
+plot_spatial_range_counts <- plot_spat.range_counts(dataset_repos_relevant)+
   coord_flip()
 
 plot_spatial_range_counts
@@ -1056,7 +1061,6 @@ plot_comm <- plot_comm +
 print(plot_comm)
 
 
-
 plots_taxa <- ggarrange(plot_spp,
           plot_comm,
           common.legend = TRUE,
@@ -1065,10 +1069,75 @@ plots_taxa <- ggarrange(plot_spp,
 
 plots_taxa
 
-#ggsave(here::here("figures/plots_taxa.png"), height = 8, width = 11)
+ggsave(here::here("figures/plots_taxa.png"), height = 8, width = 11)
 
 ```
 
+
+```{r}
+missing_urls <- setdiff(dataset_repos_relevant$url, df_taxa$url)
+
+# Display the missing URLs
+if(length(missing_urls) > 0) {
+  print("Missing URLs from df_taxa:")
+  print(missing_urls)
+} else {
+  print("No missing URLs. All URLs from dataset_repos_relevant are present in df_taxa.")
+}
+```
+
+
+
+```{r}
+#Directly count the total unique URLs in df_taxa
+total_unique_urls <- df_taxa |>
+  dplyr::distinct(url) |>
+  nrow()
+
+cat("Total unique URLs in df_taxa (expected 89):", total_unique_urls, "\n")
+
+# Count the number of unique datasets (unique URLs) for each $fewspp_group, including NAs
+urls_in_fewspp <- df_taxa |>
+  dplyr::filter(!is.na(fewspp_group)) |>
+  dplyr::distinct(url)
+
+# Count the number of unique datasets (unique URLs) for each $multispp_group, including NAs
+urls_in_multispp <- df_taxa |>
+  dplyr::filter(!is.na(multispp_group)) |>
+  dplyr::distinct(url)
+
+#  Find the overlapping URLs (those present in both fewspp_group and multispp_group)
+overlap_urls <- intersect(urls_in_fewspp$url, urls_in_multispp$url)
+
+#  Count unique URLs from both groups combined (without double-counting)
+combined_unique_urls <- union(urls_in_fewspp$url, urls_in_multispp$url)
+
+
+cat("Total unique URLs from both groups combined (without double-counting):", length(combined_unique_urls), "\n")
+cat("Number of overlapping URLs (present in both groups):", length(overlap_urls), "\n")
+
+# Print the sum of unique URLs for each group
+cat("Unique datasets in fewspp group:", nrow(urls_in_fewspp), "\n")
+cat("Unique datasets in multispp group:", nrow(urls_in_multispp), "\n")
+```
+```{r}
+# Count the number of species per group in $fewspp_group
+species_per_fewspp_group <- df_taxa |>
+  dplyr::filter(!is.na(fewspp_group)) |>
+  dplyr::group_by(fewspp_group) |>
+  dplyr::summarise(species_count = n_distinct(species))
+
+# Count the number of species per group in $multispp_group
+species_per_multispp_group <- df_taxa |>
+  dplyr::filter(!is.na(multispp_group)) |>
+  dplyr::group_by(multispp_group) |>
+  dplyr::summarise(species_count = n_distinct(species))
+
+paste("count of classes:",length(unique(c(species_per_fewspp_group$fewspp_group, species_per_multispp_group$multispp_group))))
+
+paste("average n species in multispecies data:", mean(df_taxa$n, na.rm = TRUE))
+
+```
 
 
 
@@ -1116,7 +1185,7 @@ Count relevance
 dataset_sc_assessed <- dataset_sc |>
   dplyr::filter(MC_relevance_modifiers %in% c("H", "M", "L", "X"))
 
-n_retrieved_sc <- nrow(dataset_sc_assessed)
+n_retrieved_sc <- nrow(dataset_sc)
 
 # Count and calculate percentages for MC_relevance, labeled as MC_mainc_relevance
 relevance_mainc_table <- dataset_sc_assessed |>
